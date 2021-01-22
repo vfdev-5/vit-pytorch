@@ -67,14 +67,21 @@ def training(local_rank, config):
     evaluator = create_supervised_evaluator(model, metrics=metrics, device=device, non_blocking=True)
     train_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device, non_blocking=True)
 
+    if config["with_pbar"] and rank == 0:
+        ProgressBar(desc="Evaluation (train)", persist=False).attach(train_evaluator)
+        ProgressBar(desc="Evaluation (val)", persist=False).attach(evaluator)
+
     def run_validation(engine):
         epoch = trainer.state.epoch
-        state = train_evaluator.run(train_loader)
+        with autocast(enabled=config["with_amp"]):
+            state = train_evaluator.run(train_loader)
         log_metrics(logger, epoch, state.times["COMPLETED"], "Train", state.metrics)
-        state = evaluator.run(test_loader)
+        with autocast(enabled=config["with_amp"]):
+            state = evaluator.run(test_loader)
         log_metrics(logger, epoch, state.times["COMPLETED"], "Test", state.metrics)
 
-    trainer.add_event_handler(Events.EPOCH_COMPLETED(every=config["validate_every"]) | Events.COMPLETED, run_validation)
+    ev = Events.EPOCH_COMPLETED(every=config["validate_every"]) | Events.COMPLETED
+    trainer.add_event_handler(ev, run_validation)
 
     if rank == 0:
         # Setup TensorBoard logging on trainer and evaluators. Logged values are:
@@ -124,6 +131,7 @@ def run(
     resume_from=None,
     nproc_per_node=None,
     with_pbar=False,
+    with_amp=False,
     **spawn_kwargs,
 ):
     """Main entry to train an model on CIFAR10 dataset.
@@ -148,6 +156,7 @@ def run(
             when main python process is spawning training as child processes.
         resume_from (str, optional): path to checkpoint to use to resume the training from. Default, None.
         with_pbar(bool): if True adds a progress bar on training iterations.
+        with_amp(bool): if True uses torch native AMP
         **spawn_kwargs: Other kwargs to spawn run in child processes: master_addr, master_port, node_rank, nnodes
 
     """
@@ -248,7 +257,7 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     #    - RunningAverage` on `train_step` output
     #    - Two progress bars on epochs and optionally on iterations
 
-    scaler = GradScaler()
+    scaler = GradScaler(enabled=config["with_amp"])
 
     def train_step(engine, batch):
 
@@ -260,14 +269,21 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
 
         model.train()
 
-        with autocast():
+        with autocast(enabled=config["with_amp"]):
             y_pred = model(x)
             loss = criterion(y_pred, y)
 
         optimizer.zero_grad()
-        scaler.scale(loss).backward()        
-        scaler.step(optimizer)
-        scaler.update()
+        scaler.scale(loss).backward()
+
+        if idist.backend() == "horovod":
+            optimizer.synchronize()
+            with optimizer.skip_synchronize():
+                scaler.step(optimizer)
+                scaler.update()
+        else:
+            scaler.step(optimizer)
+            scaler.update()
 
         return {
             "batch loss": loss.item(),
@@ -276,7 +292,7 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     trainer = Engine(train_step)
     trainer.logger = logger
 
-    if config["with_pbar"]:
+    if config["with_pbar"] and idist.get_rank() == 0:
         ProgressBar().attach(trainer)
 
     to_save = {"trainer": trainer, "model": model, "optimizer": optimizer, "lr_scheduler": lr_scheduler}
