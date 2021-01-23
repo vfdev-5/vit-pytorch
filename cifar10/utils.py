@@ -44,7 +44,16 @@ def get_model(name):
 
     if name in models.__dict__:
         fn = models.__dict__[name]
-    elif name in ["vit_tiny", "vit_b16_32x32"]:
+    elif name in ["vit_tiny_patch4_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
+        fn = __dict__[name]
+    elif name in ["timm_vit_b16_patch4_32x32", ]:
+        try:
+            import timm
+        except ImportError:
+            raise RuntimeError(
+                "Package timm is not installed. Please, install it with:\n"
+                "\tpip install timm"
+            )
         fn = __dict__[name]
     else:
         raise RuntimeError(f"Unknown model name {name}")
@@ -56,31 +65,74 @@ def get_model(name):
     return model
 
 
-def vit_tiny(num_classes=10, input_channels=3, input_size=32):
+def vit_tiny_patch4_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
         input_channels=input_channels,
-        input_size=input_size,
+        input_size=32,
         patch_size=4,
         hidden_size=512,
         num_layers=4,
         num_heads=6,
         mlp_dim=1024,
-        drop_rate=0.1, 
+        drop_rate=0.0, 
         attn_drop_rate=0.0,
     )
 
 
-def vit_b16_32x32(num_classes=10, input_channels=3, input_size=32):
+def vit_b4_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
         input_channels=input_channels,
-        input_size=input_size,
+        input_size=32,
         patch_size=4,
         hidden_size=768,
         num_layers=12,
         num_heads=12,
         mlp_dim=3072,
-        drop_rate=0.1,
+        drop_rate=0.0,
         attn_drop_rate=0.0,
+    )
+
+
+def vit_b3_32x32(num_classes=10, input_channels=3):
+    return VisionTransformer(
+        num_classes=num_classes,
+        input_channels=input_channels,
+        input_size=32,
+        patch_size=3,  # ceil of 32 / (224 / 16) = 2.286
+        hidden_size=768,
+        num_layers=12,
+        num_heads=12,
+        mlp_dim=3072,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+    )
+
+
+
+def vit_b2_32x32(num_classes=10, input_channels=3):
+    return VisionTransformer(
+        num_classes=num_classes,
+        input_channels=input_channels,
+        input_size=32,
+        patch_size=2,  # floor of 32 / (224 / 16) = 2.286
+        hidden_size=768,
+        num_layers=12,
+        num_heads=12,
+        mlp_dim=3072,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+    )
+
+
+def timm_vit_b4_32x32(num_classes=10, input_channels=3):
+    from functools import partial
+    import torch.nn as nn
+    from timm.models.vision_transformer import VisionTransformer as TimmVisionTransformer
+
+    return TimmVisionTransformer(
+        img_size=32, patch_size=4, in_chans=input_channels,
+        embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        num_classes=num_classes, norm_layer=partial(nn.LayerNorm, eps=1e-6)
     )

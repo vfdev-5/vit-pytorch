@@ -1,14 +1,12 @@
 # Train ViT on CIFAR10 with [PyTorch-Ignite](https://github.com/pytorch/ignite)
 
-- on 1 or more GPUs
-- compute training/validation metrics
-- log learning rate, metrics etc
-- save the best model weights
 
-Configurations:
-
-- [x] single GPU
-- [x] multi GPUs on a single node
+We define ViT models adapted for CIFAR10 images of 32x32 size:
+- vit_tiny_patch4_32x32 : 32x32 input size and patch of 4 pixels
+- vit_b4_32x32 : our base ViT reimplementation with 32x32 input size and patch of 4 pixels
+- vit_b3_32x32 : our base ViT reimplementation with 32x32 input size and patch of 3 pixels
+- vit_b2_32x32 : our base ViT reimplementation with 32x32 input size and patch of 2 pixels
+- timm_vit_b4_32x32 : timm reimplementation of base ViT with 32x32 input size and patch of 4 pixels
 
 ## Requirements:
 
@@ -70,4 +68,15 @@ python -u main.py run --backend="horovod" --nproc_per_node=2
 
 ### Online logs
 
-On TensorBoard.dev: 
+On TensorBoard.dev: https://tensorboard.dev/experiment/GG7YpF4kSxirF2KJXgR8hg
+
+```
+python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=200 --model="vit_tiny_patch4_32x32" -
+-output_path=/output/output-cifar10-vit --with_amp --with_pbar
+
+
+python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=100 --model="vit_b16_patch4_32x32" --output_path=/output/output-cifar10-vit --with_amp --with_pbar
+
+
+python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=100 --model="vit_b16_patch2_32x32" --output_path=/output/output-cifar10-vit --with_amp --with_pbar
+```

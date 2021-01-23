@@ -27,11 +27,7 @@ def training(local_rank, config):
     manual_seed(config["seed"] + rank)
     device = idist.device()
 
-    logger = setup_logger(name="CIFAR10-Training", distributed_rank=local_rank)
-
-    log_basic_info(logger, config)
-
-    output_path = config["output_path"]
+    output_path = logger_filepath = config["output_path"]
     if rank == 0:
         now = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -40,10 +36,15 @@ def training(local_rank, config):
         if not output_path.exists():
             output_path.mkdir(parents=True)
         config["output_path"] = output_path.as_posix()
-        logger.info(f"Output path: {config['output_path']}")
 
         if "cuda" in device.type:
             config["cuda device name"] = torch.cuda.get_device_name(local_rank)
+
+        logger_filepath = (output_path / "logs").as_posix()
+
+    logger = setup_logger(name="CIFAR10-Training", filepath=logger_filepath, distributed_rank=local_rank)
+
+    log_basic_info(logger, config)
 
     # Setup dataflow, model, optimizer, criterion
     train_loader, test_loader = get_dataflow(config)
@@ -119,14 +120,14 @@ def run(
     output_path="/tmp/output-cifar10/",
     model="vit_tiny",
     batch_size=512,
-    momentum=0.9,
+    betas=(0.9, 0.999),
     weight_decay=1e-4,
     num_workers=12,
-    num_epochs=24,
-    learning_rate=0.4,
-    num_warmup_epochs=4,
+    num_epochs=200,
+    learning_rate=0.001,
+    num_warmup_epochs=0,
     validate_every=3,
-    checkpoint_every=200,
+    checkpoint_every=1000,
     backend=None,
     resume_from=None,
     nproc_per_node=None,
@@ -142,7 +143,7 @@ def run(
         output_path (str): output path. Default, "/tmp/output-cifar10".
         model (str): model name (from torchvision) to setup model to train. Default, "resnet18".
         batch_size (int): total batch size. Default, 512.
-        momentum (float): optimizer's momentum. Default, 0.9.
+        betas (list of floats): Adam optimizer's betas. Default, 0.9.
         weight_decay (float): weight decay. Default, 1e-4.
         num_workers (int): number of workers in the data loader. Default, 12.
         num_epochs (int): number of epochs to train the model. Default, 24.
@@ -200,12 +201,11 @@ def initialize(config):
     # Adapt model for distributed settings if configured
     model = idist.auto_model(model)
 
-    optimizer = optim.SGD(
+    optimizer = optim.Adam(
         model.parameters(),
         lr=config["learning_rate"],
-        momentum=config["momentum"],
+        betas=config["betas"],
         weight_decay=config["weight_decay"],
-        nesterov=True,
     )
     optimizer = idist.auto_optim(optimizer)
     criterion = nn.CrossEntropyLoss().to(idist.device())

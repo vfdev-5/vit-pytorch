@@ -21,7 +21,7 @@ class VisionAttention(nn.Module):
     https://github.com/google/flax/blob/master/flax/nn/attention.py
     """
     
-    def __init__(self, embed_dim, num_heads=8, qkv_bias=False, attn_drop=0.):
+    def __init__(self, embed_dim, num_heads=8, qkv_bias=True, attn_drop=0.):
         super().__init__()
         head_dim = embed_dim // num_heads
         self.scale = float(head_dim) ** -0.5
@@ -68,8 +68,8 @@ class EncoderBlock(nn.Module):
     
     def __init__(self, embed_dim, num_heads, mlp_ratio=4, drop_rate=0., attn_drop_rate=0.):
         super().__init__()
-        self.lnorm1 = nn.LayerNorm(embed_dim)
-        self.lnorm2 = nn.LayerNorm(embed_dim)
+        self.lnorm1 = nn.LayerNorm(embed_dim, eps=1e-6)
+        self.lnorm2 = nn.LayerNorm(embed_dim, eps=1e-6)
         self.attention = VisionAttention(
             embed_dim, num_heads=num_heads, attn_drop=attn_drop_rate
         )
@@ -108,7 +108,7 @@ class VisionTransformer(nn.Module):
     ):
         super().__init__()
 
-        self.patchs_embed = nn.Conv2d(
+        self.patch_embed = nn.Conv2d(
             input_channels, hidden_size, kernel_size=patch_size, stride=patch_size
         )
         self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
@@ -127,7 +127,7 @@ class VisionTransformer(nn.Module):
         }
         blocks = [EncoderBlock(**kwargs) for _ in range(num_layers)]
         self.blocks = nn.Sequential(*blocks)
-        self.lnorm = nn.LayerNorm(hidden_size)
+        self.lnorm = nn.LayerNorm(hidden_size, eps=1e-6)
 
         self.mlp_head = nn.Linear(hidden_size, num_classes)
 
@@ -145,7 +145,7 @@ class VisionTransformer(nn.Module):
             nn.init.constant_(m.weight, 1.0)
 
     def features(self, x):
-        patches = self.patchs_embed(x)
+        patches = self.patch_embed(x)
         patches = patches.flatten(start_dim=2)
         patches = patches.transpose(1, 2)
         
