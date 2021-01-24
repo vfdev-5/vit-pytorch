@@ -44,7 +44,7 @@ def get_model(name):
 
     if name in models.__dict__:
         fn = models.__dict__[name]
-    elif name in ["vit_tiny_patch4_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
+    elif name in ["vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
         fn = __dict__[name]
     elif name in ["timm_vit_b16_patch4_32x32", ]:
         try:
@@ -65,19 +65,27 @@ def get_model(name):
     return model
 
 
-def vit_tiny_patch4_32x32(num_classes=10, input_channels=3):
+def vit_tiny_patchX_32x32(patch_size, num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
         input_channels=input_channels,
         input_size=32,
-        patch_size=4,
+        patch_size=patch_size,
         hidden_size=512,
         num_layers=4,
         num_heads=6,
         mlp_dim=1024,
-        drop_rate=0.0, 
+        drop_rate=0.1, 
         attn_drop_rate=0.0,
     )
+
+
+def vit_tiny_patch4_32x32(num_classes=10, input_channels=3):
+    return vit_tiny_patchX_32x32(4, num_classes=num_classes, input_channels=input_channels)
+
+
+def vit_tiny_patch2_32x32(num_classes=10, input_channels=3):
+    return vit_tiny_patchX_32x32(2, num_classes=num_classes, input_channels=input_channels)
 
 
 def vit_b4_32x32(num_classes=10, input_channels=3):
@@ -90,7 +98,7 @@ def vit_b4_32x32(num_classes=10, input_channels=3):
         num_layers=12,
         num_heads=12,
         mlp_dim=3072,
-        drop_rate=0.0,
+        drop_rate=0.1,
         attn_drop_rate=0.0,
     )
 
@@ -105,7 +113,7 @@ def vit_b3_32x32(num_classes=10, input_channels=3):
         num_layers=12,
         num_heads=12,
         mlp_dim=3072,
-        drop_rate=0.0,
+        drop_rate=0.1,
         attn_drop_rate=0.0,
     )
 
@@ -120,7 +128,7 @@ def vit_b2_32x32(num_classes=10, input_channels=3):
         num_layers=12,
         num_heads=12,
         mlp_dim=3072,
-        drop_rate=0.0,
+        drop_rate=0.1,
         attn_drop_rate=0.0,
     )
 

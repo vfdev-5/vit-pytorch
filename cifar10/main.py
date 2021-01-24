@@ -238,7 +238,7 @@ def log_basic_info(logger, config):
     logger.info("\n")
 
     if idist.get_world_size() > 1:
-        logger.info("\nDistributed setting:")
+        logger.info("Distributed setting:")
         logger.info(f"\tbackend: {idist.backend()}")
         logger.info(f"\tworld size: {idist.get_world_size()}")
         logger.info("\n")
