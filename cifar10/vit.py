@@ -4,17 +4,17 @@ import torch.nn as nn
 
 class VisionAttention(nn.Module):
     """Vision Multi-Head Attention layer with trainable parameters:
-    - W_q, W_k, W_k : embed_dim * embed_dim * 3
-    - W_o : embed_dim * embed_dim
+    - W_q, W_k, W_k : embed_dim * head_dim * num_heads * 3
+    - W_o : head_dim * num_heads * embed_dim
     
     .. code-block:: text
 
         x, (B, N, embed_dim) -> 
-                    -> Q = X * W_q, (B, N, embed_dim) -> 
-                    -> K = X * W_k, (B, N, embed_dim) ->
-                    -> V = X * W_v, (B, N, embed_dim) ->
-                    -> A = softmax(Q @ K^t * scale), (B, N, N) -> Dropout(A) ->
-                    -> H = A @ V, (B, N, embed_dim) -> 
+                    -> Q = X * W_q, (B, num_heads, N, head_dim) -> 
+                    -> K = X * W_k, (B, num_heads, N, head_dim) ->
+                    -> V = X * W_v, (B, num_heads, N, head_dim) ->
+                    -> A = softmax(Q @ K^t * scale), (B, num_heads, N, N) -> Dropout(A) ->
+                    -> H = A @ V, (B, num_heads, N, head_dim) ->
                     -> y = H @ W_o, (B, N, embed_dim) ->
                     -> output
                     
@@ -24,17 +24,24 @@ class VisionAttention(nn.Module):
     def __init__(self, embed_dim, num_heads=8, qkv_bias=True, attn_drop=0.):
         super().__init__()
         head_dim = embed_dim // num_heads
+        self.num_heads = num_heads        
         self.scale = float(head_dim) ** -0.5
-        self.qkv = nn.Linear(embed_dim, embed_dim * 3, bias=qkv_bias)
+        self.qkv = nn.Linear(embed_dim, num_heads * head_dim * 3, bias=qkv_bias)
         self.att_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(embed_dim, embed_dim)
+        self.proj = nn.Linear(num_heads * head_dim, embed_dim)
 
     def forward(self, x):
-        Q, K, V = self.qkv(x).chunk(3, dim=-1)
-        attention = (Q @ K.transpose(1, 2)) * self.scale
+        B, N, _ = x.shape
+        # (B, N, num_heads * head_dim * 3) -> (B, N, num_heads, head_dim * 3) ->
+        # -> (B, num_heads, N, head_dim * 3) -> (B, num_heads, N, head_dim) x 3
+        qkv = self.qkv(x).reshape(B, N, self.num_heads, -1).transpose(1, 2)
+        Q, K, V = qkv.chunk(3, dim=-1)
+        attention = (Q @ K.transpose(-1, -2)) * self.scale
         attention = attention.softmax(dim=-1)
         attention = self.att_drop(attention)
         heads = attention @ V
+        # Heads is (B, num_heads, N, head_dim) => (B, N, num_heads * head_dim)
+        heads = heads.transpose(1, 2).reshape(B, N, -1)
         output = self.proj(heads)
         return output
 
@@ -131,13 +138,13 @@ class VisionTransformer(nn.Module):
 
         self.mlp_head = nn.Linear(hidden_size, num_classes)
 
-        nn.init.normal_(self.pos_embed, std=.02)
-        nn.init.normal_(self.cls_token, std=.02)
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
         self.apply(self._init_weights)
     
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            nn.init.normal_(m.weight, std=.02)
+            nn.init.trunc_normal_(m.weight, std=0.02)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):

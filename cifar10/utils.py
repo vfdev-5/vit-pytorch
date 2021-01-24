@@ -110,7 +110,6 @@ def vit_b3_32x32(num_classes=10, input_channels=3):
     )
 
 
-
 def vit_b2_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
