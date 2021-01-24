@@ -118,7 +118,7 @@ def run(
     seed=543,
     data_path="/tmp/cifar10",
     output_path="/tmp/output-cifar10/",
-    model="vit_tiny",
+    model="vit_tiny_patch4_32x32",
     batch_size=512,
     betas=(0.9, 0.999),
     weight_decay=1e-4,

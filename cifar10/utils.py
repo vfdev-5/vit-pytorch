@@ -46,7 +46,7 @@ def get_model(name):
         fn = models.__dict__[name]
     elif name in ["vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
         fn = __dict__[name]
-    elif name in ["timm_vit_b16_patch4_32x32", ]:
+    elif name in ["timm_vit_b4_32x32", ]:
         try:
             import timm
         except ImportError:

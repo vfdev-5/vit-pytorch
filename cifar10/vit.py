@@ -165,12 +165,12 @@ class VisionTransformer(nn.Module):
 
         x = self.blocks(x)
         x = self.lnorm(x)
-        
-        # Return the first token
-        return x[:, 0, ...]
+        return x
     
     def forward(self, x):
         f = self.features(x)
+        # get the first token
+        f =  f[:, 0, ...]
         y = self.mlp_head(f)
         return y
     
