@@ -15,7 +15,7 @@ We define ViT models adapted for CIFAR10 images of 32x32 size:
 - [tqdm](https://github.com/tqdm/tqdm/): `pip install tqdm`
 - [tensorboardx](https://github.com/lanpa/tensorboard-pytorch): `pip install tensorboardX`
 - [python-fire](https://github.com/google/python-fire): `pip install fire`
-- (Optional) timm: `pip install timm`
+- (Optional) pytorch-image-models: `pip install timm`
 
 ## Usage:
 
