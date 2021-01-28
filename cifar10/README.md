@@ -68,7 +68,7 @@ python -u main.py run --backend="horovod" --nproc_per_node=2
 
 ### Online logs
 
-On TensorBoard.dev: 
+On TensorBoard.dev: https://tensorboard.dev/experiment/14IXJkjzT8OEagHAl5os2w
 
 ```
 python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=100 --model="vit_tiny_patch4_32x32" --output_path=/output/output-cifar10-vit --with_amp --with_pbar
@@ -84,5 +84,5 @@ python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run -
 ```
 
 ```
-python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=50 --model="vit_tiny_patch4_32x32" --output_path=/output/output-cifar10-vit --with_amp --with_pbar --num_warmup_epochs=5 --learning_rate=0.003
+python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=200 --model="vit_tiny_patch4_32x32" --output_path=/output/output-cifar10-vit --with_amp --with_pbar --num_warmup_epochs=100 --learning_rate=0.001 --weight_decay=1e-3
 ```

@@ -122,7 +122,7 @@ def run(
     batch_size=512,
     betas=(0.9, 0.999),
     weight_decay=1e-4,
-    num_workers=12,
+    num_workers=4,
     num_epochs=200,
     learning_rate=0.001,
     num_warmup_epochs=0,
