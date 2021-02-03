@@ -1,6 +1,7 @@
 import os
 
 import torch
+import torch.optim as optim
 from torchvision import models
 from torchvision import datasets
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip
@@ -8,7 +9,7 @@ from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop
 from vit import VisionTransformer
 
 
-train_transform = Compose(
+cifar10_train_transform = Compose(
     [
         Pad(4),
         RandomCrop(32, fill=128),
@@ -18,15 +19,20 @@ train_transform = Compose(
     ]
 )
 
-test_transform = Compose([ToTensor(), Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),])
+cifar10_test_transform = Compose([ToTensor(), Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),])
 
 
-def get_train_test_datasets(path):
+def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing=False):
     if not os.path.exists(path):
         os.makedirs(path)
         download = True
     else:
         download = True if len(os.listdir(path)) < 1 else False
+
+    if rescale_size is None:
+        assert rand_aug is None
+        train_transform = cifar10_train_transform
+        test_transform = cifar10_test_transform
 
     train_ds = datasets.CIFAR10(root=path, train=True, download=download, transform=train_transform)
     test_ds = datasets.CIFAR10(root=path, train=False, download=False, transform=test_transform)
@@ -63,6 +69,27 @@ def get_model(name):
         model = torch.jit.script(model)
 
     return model
+
+
+def get_optimizer(name, model, learning_rate=None, weight_decay=None):
+    opt_configs = {}
+    if name == "adam":
+        fn = optim.Adam
+    elif name == "sgd":
+        fn = optim.SGD
+        opt_configs["nesterov"] = True
+    elif name == "adamw":
+        fn = optim.AdamW
+    else:
+        raise RuntimeError(f"Unknown optmizer name {name}")
+
+    if learning_rate is not None:
+        opt_configs["lr"] = learning_rate
+    if weight_decay is not None:
+        opt_configs["weight_decay"] = weight_decay
+
+    optimizer = fn(model.parameters(), **opt_configs)
+    return optimizer
 
 
 def vit_tiny_patchX_32x32(patch_size, num_classes=10, input_channels=3):

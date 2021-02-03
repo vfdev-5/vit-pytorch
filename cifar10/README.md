@@ -66,6 +66,16 @@ or
 python -u main.py run --backend="horovod" --nproc_per_node=2
 ```
 
+### TODO:
+
+- [ ] Resize bicubic to 224 x 224
+- [ ] Rand-Augment
+- [ ] CutMix / MixUp
+- [ ] Erasing
+- [ ] Repeated Augmentations
+- [ ] Stochastic Depth
+
+
 ### Online logs
 
 On TensorBoard.dev: https://tensorboard.dev/experiment/14IXJkjzT8OEagHAl5os2w
@@ -85,4 +95,9 @@ python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run -
 
 ```
 python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=200 --model="vit_tiny_patch4_32x32" --output_path=/output/output-cifar10-vit --with_amp --with_pbar --num_warmup_epochs=100 --learning_rate=0.001 --weight_decay=1e-3
+```
+
+To debug:
+```
+python -u -m torch.distributed.launch --nproc_per_node=2 --use_env main.py run --backend="nccl" --num_epochs=1 --model="vit_tiny_patch4_32x32" --optimizer="adamw" --output_path=/output/output-cifar10-vit-debug --with_amp --with_pbar
 ```

@@ -119,8 +119,8 @@ def run(
     data_path="/tmp/cifar10",
     output_path="/tmp/output-cifar10/",
     model="vit_tiny_patch4_32x32",
+    optimizer="adam",
     batch_size=512,
-    betas=(0.9, 0.999),
     weight_decay=1e-4,
     num_workers=4,
     num_epochs=200,
@@ -133,6 +133,7 @@ def run(
     nproc_per_node=None,
     with_pbar=False,
     with_amp=False,
+    rescaled_size=None,
     **spawn_kwargs,
 ):
     """Main entry to train an model on CIFAR10 dataset.
@@ -143,7 +144,7 @@ def run(
         output_path (str): output path. Default, "/tmp/output-cifar10".
         model (str): model name (from torchvision) to setup model to train. Default, "resnet18".
         batch_size (int): total batch size. Default, 512.
-        betas (list of floats): Adam optimizer's betas. Default, 0.9.
+        optimizer (str): optimizer name. Possible values: "sgd", "adam", "adamw". Default, "adam".
         weight_decay (float): weight decay. Default, 1e-4.
         num_workers (int): number of workers in the data loader. Default, 12.
         num_epochs (int): number of epochs to train the model. Default, 24.
@@ -158,6 +159,7 @@ def run(
         resume_from (str, optional): path to checkpoint to use to resume the training from. Default, None.
         with_pbar(bool): if True adds a progress bar on training iterations.
         with_amp(bool): if True uses torch native AMP
+        rescaled_size (int, optional): if provided then input image will be rescaled to that value.
         **spawn_kwargs: Other kwargs to spawn run in child processes: master_addr, master_port, node_rank, nnodes
 
     """
@@ -198,15 +200,13 @@ def get_dataflow(config):
 
 def initialize(config):
     model = utils.get_model(config["model"])
-    # Adapt model for distributed settings if configured
+    # Adapt model for distributed backend if provided
     model = idist.auto_model(model)
 
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=config["learning_rate"],
-        betas=config["betas"],
-        weight_decay=config["weight_decay"],
+    optimizer = utils.get_optimizer(
+        config["optimizer"], model, learning_rate=config["learning_rate"], weight_decay=config["weight_decay"]
     )
+    # Adapt optimizer for distributed backend if provided
     optimizer = idist.auto_optim(optimizer)
     criterion = nn.CrossEntropyLoss().to(idist.device())
 
