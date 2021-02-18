@@ -4,7 +4,7 @@ import torch
 import torch.optim as optim
 from torchvision import models
 from torchvision import datasets
-from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip
+from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip, RandomErasing
 
 from vit import VisionTransformer
 
@@ -16,6 +16,7 @@ cifar10_train_transform = Compose(
         RandomHorizontalFlip(),
         ToTensor(),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        RandomErasing(p=0.5, scale=(0.05, 0.33), value=0)
     ]
 )
 
