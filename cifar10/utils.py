@@ -4,15 +4,16 @@ import torch
 import torch.optim as optim
 from torchvision import models
 from torchvision import datasets
-from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip, RandomErasing
+from torchvision.transforms import CenterCrop, Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip, RandomErasing, Resize
 
 from vit import VisionTransformer
-
+import PIL
 
 cifar10_train_transform = Compose(
     [
         Pad(4),
-        RandomCrop(32, fill=128),
+        Resize(232, PIL.Image.BICUBIC),
+        CenterCrop(224),
         RandomHorizontalFlip(),
         ToTensor(),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
@@ -20,7 +21,14 @@ cifar10_train_transform = Compose(
     ]
 )
 
-cifar10_test_transform = Compose([ToTensor(), Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),])
+cifar10_test_transform = Compose(
+    [ 
+        Resize(232, PIL.Image.BICUBIC),
+        CenterCrop(224),
+        ToTensor(),
+        Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225)),
+    ]
+)
 
 
 def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing=False):
@@ -51,7 +59,7 @@ def get_model(name):
 
     if name in models.__dict__:
         fn = models.__dict__[name]
-    elif name in ["vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
+    elif name in ["vit_b3_224x244", "vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
         fn = __dict__[name]
     elif name in ["timm_vit_b4_32x32", ]:
         try:
@@ -115,7 +123,6 @@ def vit_tiny_patch4_32x32(num_classes=10, input_channels=3):
 def vit_tiny_patch2_32x32(num_classes=10, input_channels=3):
     return vit_tiny_patchX_32x32(2, num_classes=num_classes, input_channels=input_channels)
 
-
 def vit_b4_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
@@ -130,6 +137,19 @@ def vit_b4_32x32(num_classes=10, input_channels=3):
         attn_drop_rate=0.0,
     )
 
+def vit_b3_224x244(num_classes=10, input_channels=3):
+    return VisionTransformer(
+        num_classes=num_classes,
+        input_channels=input_channels,
+        input_size=224,
+        patch_size=16,  # ceil of 224 / (224 / 16) = 2.286
+        hidden_size=768,
+        num_layers=12,
+        num_heads=12,
+        mlp_dim=3072,
+        drop_rate=0.1,
+        attn_drop_rate=0.0,
+    )
 
 def vit_b3_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
