@@ -1,6 +1,8 @@
 from pathlib import Path
 from datetime import datetime
 
+import numpy as np
+
 import fire
 
 import torch
@@ -136,7 +138,9 @@ def run(
     nproc_per_node=None,
     with_pbar=False,
     with_amp=False,
-    rescaled_size=None,
+    with_cutmix=False,
+    cutmix_beta=0.1,
+    cutmix_prob=0.5,
     **spawn_kwargs,
 ):
     """Main entry to train an model on CIFAR10 dataset.
@@ -162,7 +166,7 @@ def run(
         resume_from (str, optional): path to checkpoint to use to resume the training from. Default, None.
         with_pbar(bool): if True adds a progress bar on training iterations.
         with_amp(bool): if True uses torch native AMP
-        rescaled_size (int, optional): if provided then input image will be rescaled to that value.
+        rescale_size (int, optional): if provided then input image will be rescaled to that value.
         **spawn_kwargs: Other kwargs to spawn run in child processes: master_addr, master_port, node_rank, nnodes
 
     """
@@ -256,6 +260,24 @@ def log_basic_info(logger, config):
         logger.info(f"\tworld size: {idist.get_world_size()}")
         logger.info("\n")
 
+# helper to be put in seperate file/helper
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
+
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
 
 def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, config, logger):
 
@@ -271,6 +293,10 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     #    - Two progress bars on epochs and optionally on iterations
 
     scaler = GradScaler(enabled=config["with_amp"])
+    # FDE added cutmix stuff
+    use_cutmix = config["use_cutmix"]
+    cutmix_beta = config["cutmix_beta"]
+    cutmix_prob = config["cutmix_prob"]
 
     def train_step(engine, batch):
 
@@ -283,8 +309,24 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
         model.train()
 
         with autocast(enabled=config["with_amp"]):
-            y_pred = model(x)
-            loss = criterion(y_pred, y)
+            r = np.random.rand(1)
+            if use_cutmix and cutmix_beta > 0 and r < cutmix_prob:
+                # from https://github.com/clovaai/CutMix-PyTorch/blob/master/train.py
+                # generate mixed sample
+                lam = np.random.beta(cutmix_beta, cutmix_beta)
+                rand_index = torch.randperm(x.size()[0]).to(device, non_blocking=True)
+                target_a = y
+                target_b = y[rand_index]
+                bbx1, bby1, bbx2, bby2 = rand_bbox(x.size(), lam)
+                x[:, :, bbx1:bbx2, bby1:bby2] = x[rand_index, :, bbx1:bbx2, bby1:bby2]
+                # adjust lambda to exactly match pixel ratio
+                lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (x.size()[-1] * x.size()[-2]))
+                # compute output
+                output = model(x)
+                loss = criterion(output, target_a) * lam + criterion(output, target_b) * (1. - lam)
+            else:
+                y_pred = model(x)
+                loss = criterion(y_pred, y)
 
         optimizer.zero_grad()
         scaler.scale(loss).backward()
