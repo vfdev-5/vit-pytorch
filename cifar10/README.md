@@ -68,10 +68,10 @@ python -u main.py run --backend="horovod" --nproc_per_node=2
 
 ### TODO:
 
-- [ ] Resize bicubic to 224 x 224
+- [X] Resize bicubic to 224 x 224
 - [ ] Rand-Augment
 - [ ] CutMix / MixUp
-- [ ] Erasing
+- [X] Erasing
 - [ ] Repeated Augmentations
 - [ ] Stochastic Depth
 

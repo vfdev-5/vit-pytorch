@@ -118,7 +118,10 @@ def run(
     seed=543,
     data_path="/tmp/cifar10",
     output_path="/tmp/output-cifar10/",
-    model="vit_b3_224x244",
+    model="vit_tiny_patch4_32x32",
+    rescale_size=None,
+    rand_aug=None,
+    with_erasing=False,
     optimizer="adam",
     batch_size=128,
     weight_decay=1e-4,
@@ -181,7 +184,9 @@ def get_dataflow(config):
         # Ensure that only rank 0 download the dataset
         idist.barrier()
 
-    train_dataset, test_dataset = utils.get_train_test_datasets(config["data_path"])
+    train_dataset, test_dataset = utils.get_train_test_datasets(
+        config["data_path"], **{k: config[k] for k in ["rescale_size", "rand_aug", "with_erasing"]}
+    )
 
     if idist.get_rank() == 0:
         # Ensure that only rank 0 download the dataset
@@ -223,13 +228,21 @@ def initialize(config):
 
 def log_metrics(logger, epoch, elapsed, tag, metrics):
     metrics_output = "\n".join([f"\t{k}: {v}" for k, v in metrics.items()])
-    logger.info(f"\nEpoch {epoch} - Evaluation time (seconds): {int(elapsed)} - {tag} metrics:\n {metrics_output}")
+    logger.info(f"\nEpoch {epoch} - Evaluation time (seconds): {elapsed:.2f} - {tag} metrics:\n {metrics_output}")
 
 
 def log_basic_info(logger, config):
     logger.info(f"Train {config['model']} on CIFAR10")
     logger.info(f"- PyTorch version: {torch.__version__}")
     logger.info(f"- Ignite version: {ignite.__version__}")
+    if torch.cuda.is_available():
+        # explicitly import cudnn as
+        # torch.backends.cudnn can not be pickled with hvd spawning procs
+        from torch.backends import cudnn
+
+        logger.info(f"- GPU Device: {torch.cuda.get_device_name(idist.get_local_rank())}")
+        logger.info(f"- CUDA version: {torch.version.cuda}")
+        logger.info(f"- CUDNN version: {cudnn.version()}")
 
     logger.info("\n")
     logger.info("Configuration:")
@@ -238,7 +251,7 @@ def log_basic_info(logger, config):
     logger.info("\n")
 
     if idist.get_world_size() > 1:
-        logger.info("Distributed setting:")
+        logger.info("\nDistributed setting:")
         logger.info(f"\tbackend: {idist.backend()}")
         logger.info(f"\tworld size: {idist.get_world_size()}")
         logger.info("\n")

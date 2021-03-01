@@ -4,31 +4,58 @@ import torch
 import torch.optim as optim
 from torchvision import models
 from torchvision import datasets
-from torchvision.transforms import CenterCrop, Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip, RandomErasing, Resize
+import torchvision.transforms as T
 
-from vit import VisionTransformer
-import PIL
+from vit import VisionTransformer, vit_b16
 
-cifar10_train_transform = Compose(
+
+mean_vals = (0.485, 0.456, 0.406)
+std_vals = (0.229, 0.224, 0.225)
+
+
+cifar10_train_transform = T.Compose(
     [
-        Pad(4),
-        Resize(232, PIL.Image.BICUBIC),
-        CenterCrop(224),
-        RandomHorizontalFlip(),
-        ToTensor(),
-        Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        RandomErasing(p=0.5, scale=(0.05, 0.33), value=0)
+        T.Pad(4),
+        T.RandomCrop(32, fill=128),
+        T.RandomHorizontalFlip(),
+        T.ToTensor(),
+        T.Normalize(mean_vals, std_vals),
     ]
 )
 
-cifar10_test_transform = Compose(
-    [ 
-        Resize(232, PIL.Image.BICUBIC),
-        CenterCrop(224),
-        ToTensor(),
-        Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225)),
+cifar10_test_transform = T.Compose([T.ToTensor(), T.Normalize(mean_vals, std_vals),])
+
+
+def create_train_transform(size, rand_aug, with_erasing=False):
+
+    tfs = [
+        T.RandomResizedCrop(size, interpolation=3),
+        T.RandomHorizontalFlip(p=0.5),
     ]
-)
+
+    if rand_aug is None:
+        tfs.append(T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0))
+    else:
+        pass
+        
+    tfs += [
+        T.ToTensor(),
+        T.Normalize(mean_vals, std_vals),        
+    ]
+
+    if with_erasing:
+        tfs.append(T.RandomErasing(value="random"))
+
+    return T.Compose(tfs)
+
+
+def create_test_transform(size):
+    return T.Compose([
+        T.Resize(int((256 / 224) * size), interpolation=3),
+        T.CenterCrop(size),
+        T.ToTensor(),
+        T.Normalize(mean_vals, std_vals),   
+    ])
 
 
 def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing=False):
@@ -42,6 +69,9 @@ def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing
         assert rand_aug is None
         train_transform = cifar10_train_transform
         test_transform = cifar10_test_transform
+    else:
+        train_transform = create_train_transform(rescale_size, rand_aug, with_erasing)
+        test_transform = create_test_transform(rescale_size)
 
     train_ds = datasets.CIFAR10(root=path, train=True, download=download, transform=train_transform)
     test_ds = datasets.CIFAR10(root=path, train=False, download=False, transform=test_transform)
@@ -69,6 +99,8 @@ def get_model(name):
                 "Package timm is not installed. Please, install it with:\n"
                 "\tpip install timm"
             )
+        fn = __dict__[name]
+    elif name in ["vit_b16", ]:
         fn = __dict__[name]
     else:
         raise RuntimeError(f"Unknown model name {name}")
