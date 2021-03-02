@@ -106,9 +106,8 @@ def training(local_rank, config):
     try:
         trainer.run(train_loader, max_epochs=config["num_epochs"])
     except Exception as e:
-        import traceback
-
-        print(traceback.format_exc())
+        logger.exception("")
+        raise e
 
     if rank == 0:
         tb_logger.close()
