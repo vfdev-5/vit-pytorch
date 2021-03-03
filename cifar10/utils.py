@@ -89,7 +89,7 @@ def get_model(name):
 
     if name in models.__dict__:
         fn = models.__dict__[name]
-    elif name in ["vit_b3_224x244", "vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
+    elif name in ["vit_b16_224x244", "vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
         fn = __dict__[name]
     elif name in ["timm_vit_b4_32x32", ]:
         try:
@@ -206,7 +206,7 @@ def vit_b4_32x32(num_classes=10, input_channels=3):
         attn_drop_rate=0.0,
     )
 
-def vit_b3_224x244(num_classes=10, input_channels=3):
+def vit_b16_224x244(num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
         input_channels=input_channels,
