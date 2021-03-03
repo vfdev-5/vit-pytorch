@@ -21,7 +21,7 @@ from ignite.contrib.engines import common
 from ignite.contrib.handlers import PiecewiseLinear, ProgressBar
 
 import utils
-
+from utils import rand_bbox
 
 def training(local_rank, config):
 
@@ -138,8 +138,7 @@ def run(
     nproc_per_node=None,
     with_pbar=False,
     with_amp=False,
-    with_cutmix=False,
-    cutmix_beta=0.1,
+    cutmix_beta=0.0,
     cutmix_prob=0.5,
     **spawn_kwargs,
 ):
@@ -260,24 +259,7 @@ def log_basic_info(logger, config):
         logger.info(f"\tworld size: {idist.get_world_size()}")
         logger.info("\n")
 
-# helper to be put in seperate file/helper
-def rand_bbox(size, lam):
-    W = size[2]
-    H = size[3]
-    cut_rat = np.sqrt(1. - lam)
-    cut_w = np.int(W * cut_rat)
-    cut_h = np.int(H * cut_rat)
 
-    # uniform
-    cx = np.random.randint(W)
-    cy = np.random.randint(H)
-
-    bbx1 = np.clip(cx - cut_w // 2, 0, W)
-    bby1 = np.clip(cy - cut_h // 2, 0, H)
-    bbx2 = np.clip(cx + cut_w // 2, 0, W)
-    bby2 = np.clip(cy + cut_h // 2, 0, H)
-
-    return bbx1, bby1, bbx2, bby2
 
 def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, config, logger):
 
@@ -294,7 +276,6 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
 
     scaler = GradScaler(enabled=config["with_amp"])
     # FDE added cutmix stuff
-    use_cutmix = config["use_cutmix"]
     cutmix_beta = config["cutmix_beta"]
     cutmix_prob = config["cutmix_prob"]
 
@@ -308,25 +289,13 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
 
         model.train()
 
-        with autocast(enabled=config["with_amp"]):
+        with autocast(enabled=config["with_amp"]): 
             r = np.random.rand(1)
-            if use_cutmix and cutmix_beta > 0 and r < cutmix_prob:
-                # from https://github.com/clovaai/CutMix-PyTorch/blob/master/train.py
-                # generate mixed sample
-                lam = np.random.beta(cutmix_beta, cutmix_beta)
-                rand_index = torch.randperm(x.size()[0]).to(device, non_blocking=True)
-                target_a = y
-                target_b = y[rand_index]
-                bbx1, bby1, bbx2, bby2 = rand_bbox(x.size(), lam)
-                x[:, :, bbx1:bbx2, bby1:bby2] = x[rand_index, :, bbx1:bbx2, bby1:bby2]
-                # adjust lambda to exactly match pixel ratio
-                lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (x.size()[-1] * x.size()[-2]))
-                # compute output
-                output = model(x)
-                loss = criterion(output, target_a) * lam + criterion(output, target_b) * (1. - lam)
+            if cutmix_beta > 0 and r < cutmix_prob:
+                output, loss = utils.cutmix_forward(model, x, criterion, y, cutmix_beta)
             else:
-                y_pred = model(x)
-                loss = criterion(y_pred, y)
+                output = model(x)
+                loss = criterion(output, y)
 
         optimizer.zero_grad()
         scaler.scale(loss).backward()
