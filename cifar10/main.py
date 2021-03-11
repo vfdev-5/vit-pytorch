@@ -1,8 +1,6 @@
 from pathlib import Path
 from datetime import datetime
 
-import numpy as np
-
 import fire
 
 import torch
@@ -21,7 +19,6 @@ from ignite.contrib.engines import common
 from ignite.contrib.handlers import PiecewiseLinear, ProgressBar
 
 import utils
-from utils import rand_bbox
 
 def training(local_rank, config):
 
@@ -277,7 +274,6 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     #    - Two progress bars on epochs and optionally on iterations
 
     scaler = GradScaler(enabled=config["with_amp"])
-    # FDE added cutmix stuff
     cutmix_beta = config["cutmix_beta"]
     cutmix_prob = config["cutmix_prob"]
 
@@ -292,7 +288,7 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
         model.train()
 
         with autocast(enabled=config["with_amp"]): 
-            r = np.random.rand(1)
+            r = torch.rand(1).item()
             if cutmix_beta > 0 and r < cutmix_prob:
                 output, loss = utils.cutmix_forward(model, x, criterion, y, cutmix_beta)
             else:
