@@ -269,9 +269,6 @@ def log_basic_info(logger, config):
         logger.info("\nDistributed setting:")
         logger.info(f"\tbackend: {idist.backend()}")
         logger.info(f"\tworld size: {idist.get_world_size()}")
-        logger.info("\n")
-
-
 
 def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, config, logger):
 
