@@ -75,6 +75,7 @@ python -u main.py run --backend="horovod" --nproc_per_node=2
 - [X] Erasing
 - [ ] Repeated Augmentations
 - [ ] Stochastic Depth
+- [ ] Grab HP from paper
 
 
 ### Online logs

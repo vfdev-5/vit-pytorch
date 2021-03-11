@@ -166,6 +166,8 @@ def run(
         with_pbar(bool): if True adds a progress bar on training iterations.
         with_amp(bool): if True uses torch native AMP
         rescale_size (int, optional): if provided then input image will be rescaled to that value.
+        cutmix_beta : beta value for the distribution of the cutmix
+        cutmix_prob : cutmix probablity
         **spawn_kwargs: Other kwargs to spawn run in child processes: master_addr, master_port, node_rank, nnodes
 
     """
