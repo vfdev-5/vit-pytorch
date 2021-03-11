@@ -1,24 +1,21 @@
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 import fire
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import utils
 from torch.cuda.amp import GradScaler, autocast
 
 import ignite
 import ignite.distributed as idist
-from ignite.engine import Events, Engine, create_supervised_evaluator
-from ignite.metrics import Accuracy, Loss
-from ignite.handlers import Checkpoint, DiskSaver
-from ignite.utils import manual_seed, setup_logger
-
 from ignite.contrib.engines import common
-from ignite.contrib.handlers import PiecewiseLinear, ProgressBar
-
-import utils
+from ignite.contrib.handlers import PiecewiseLinear
+from ignite.engine import Engine, Events
+from ignite.handlers import Checkpoint, DiskSaver, global_step_from_engine
+from ignite.metrics import Accuracy, Loss
+from ignite.utils import manual_seed, setup_logger
 
 
 def training(local_rank, config):
@@ -27,7 +24,11 @@ def training(local_rank, config):
     manual_seed(config["seed"] + rank)
     device = idist.device()
 
-    output_path = logger_filepath = config["output_path"]
+    logger = setup_logger(name="CIFAR10-Training", distributed_rank=local_rank)
+
+    log_basic_info(logger, config)
+
+    output_path = config["output_path"]
     if rank == 0:
         now = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -36,15 +37,21 @@ def training(local_rank, config):
         if not output_path.exists():
             output_path.mkdir(parents=True)
         config["output_path"] = output_path.as_posix()
+        logger.info(f"Output path: {config['output_path']}")
 
         if "cuda" in device.type:
             config["cuda device name"] = torch.cuda.get_device_name(local_rank)
 
-        logger_filepath = (output_path / "logs").as_posix()
+        if config["with_clearml"]:
+            try:
+                from clearml import Task
+            except ImportError:
+                # Backwards-compatibility for legacy Trains SDK
+                from trains import Task
 
-    logger = setup_logger(name="CIFAR10-Training", filepath=logger_filepath, distributed_rank=local_rank)
-
-    log_basic_info(logger, config)
+            task = Task.init("CIFAR10-Training", task_name=output_path.stem)
+            task.connect_configuration(config)
+            task.connect(config)
 
     # Setup dataflow, model, optimizer, criterion
     train_loader, test_loader = get_dataflow(config)
@@ -59,14 +66,14 @@ def training(local_rank, config):
 
     # Let's now setup evaluator engine to perform model's validation and compute metrics
     metrics = {
-        "accuracy": Accuracy(),
-        "loss": Loss(criterion),
+        "Accuracy": Accuracy(),
+        "Loss": Loss(criterion),
     }
 
     # We define two evaluators as they wont have exactly similar roles:
     # - `evaluator` will save the best model based on validation score
-    evaluator = create_supervised_evaluator(model, metrics=metrics, device=device, non_blocking=True)
-    train_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device, non_blocking=True)
+    evaluator = create_evaluator(model, metrics=metrics, config=config)
+    train_evaluator = create_evaluator(model, metrics=metrics, config=config)
 
     if config["with_pbar"] and rank == 0:
         ProgressBar(desc="Evaluation (train)", persist=False).attach(train_evaluator)
@@ -74,15 +81,12 @@ def training(local_rank, config):
 
     def run_validation(engine):
         epoch = trainer.state.epoch
-        with autocast(enabled=config["with_amp"]):
-            state = train_evaluator.run(train_loader)
+        state = train_evaluator.run(train_loader)
         log_metrics(logger, epoch, state.times["COMPLETED"], "Train", state.metrics)
-        with autocast(enabled=config["with_amp"]):
-            state = evaluator.run(test_loader)
+        state = evaluator.run(test_loader)
         log_metrics(logger, epoch, state.times["COMPLETED"], "Test", state.metrics)
 
-    ev = Events.EPOCH_COMPLETED(every=config["validate_every"]) | Events.COMPLETED
-    trainer.add_event_handler(ev, run_validation)
+    trainer.add_event_handler(Events.EPOCH_COMPLETED(every=config["validate_every"]) | Events.COMPLETED, run_validation)
 
     if rank == 0:
         # Setup TensorBoard logging on trainer and evaluators. Logged values are:
@@ -92,15 +96,18 @@ def training(local_rank, config):
         evaluators = {"training": train_evaluator, "test": evaluator}
         tb_logger = common.setup_tb_logging(output_path, trainer, optimizer, evaluators=evaluators)
 
-    # Store 1 best model by validation accuracy:
-    common.gen_save_best_models_by_val_score(
-        save_handler=DiskSaver(config["output_path"], require_empty=False),
-        evaluator=evaluator,
-        models={"model": model},
-        metric_name="accuracy",
+    # Store 1 best models by validation accuracy starting from num_epochs / 2:
+    best_model_handler = Checkpoint(
+        {"model": model},
+        get_save_handler(config),
+        filename_prefix="best",
         n_saved=1,
-        trainer=trainer,
-        tag="test",
+        global_step_transform=global_step_from_engine(trainer),
+        score_name="test_accuracy",
+        score_function=Checkpoint.get_default_score_fn("Accuracy"),
+    )
+    evaluator.add_event_handler(
+        Events.COMPLETED(lambda *_: trainer.state.epoch > config["num_epochs"] // 2), best_model_handler
     )
 
     try:
@@ -136,6 +143,7 @@ def run(
     with_pbar=False,
     with_amp=False,
     rescaled_size=None,
+    with_clearml=False,
     **spawn_kwargs,
 ):
     """Main entry to train an model on CIFAR10 dataset.
@@ -154,7 +162,7 @@ def run(
         num_warmup_epochs (int): number of warm-up epochs before learning rate decay. Default, 4.
         validate_every (int): run model's validation every ``validate_every`` epochs. Default, 3.
         checkpoint_every (int): store training checkpoint every ``checkpoint_every`` iterations. Default, 200.
-        backend (str, optional): backend to use for distributed configuration. Possible values: None, "nccl", "xla-tpu",
+        backend (str, optional): backend to use for distributed configuration. Possible values: None, "nccl",
             "gloo" etc. Default, None.
         nproc_per_node (int, optional): optional argument to setup number of processes per node. It is useful,
             when main python process is spawning training as child processes.
@@ -162,6 +170,7 @@ def run(
         with_pbar(bool): if True adds a progress bar on training iterations.
         with_amp(bool): if True uses torch native AMP
         rescaled_size (int, optional): if provided then input image will be rescaled to that value.
+        with_clearml (bool): if True, experiment ClearML logger is setup. Default, False.
         **spawn_kwargs: Other kwargs to spawn run in child processes: master_addr, master_port, node_rank, nnodes
 
     """
@@ -171,6 +180,8 @@ def run(
     del config["spawn_kwargs"]
 
     spawn_kwargs["nproc_per_node"] = nproc_per_node
+    if backend == "xla-tpu" and with_amp:
+        raise RuntimeError("The value of with_amp should be False if backend is xla")
 
     with idist.Parallel(backend=backend, **spawn_kwargs) as parallel:
 
@@ -269,7 +280,8 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     #    - RunningAverage` on `train_step` output
     #    - Two progress bars on epochs and optionally on iterations
 
-    scaler = GradScaler(enabled=config["with_amp"])
+    with_amp = config["with_amp"]
+    scaler = GradScaler(enabled=with_amp)
 
     def train_step(engine, batch):
 
@@ -281,7 +293,7 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
 
         model.train()
 
-        with autocast(enabled=config["with_amp"]):
+        with autocast(enabled=with_amp):
             y_pred = model(x)
             loss = criterion(y_pred, y)
 
@@ -317,7 +329,7 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
         train_sampler=train_sampler,
         to_save=to_save,
         save_every_iters=config["checkpoint_every"],
-        save_handler=DiskSaver(config["output_path"], require_empty=False),
+        save_handler=get_save_handler(config),
         lr_scheduler=lr_scheduler,
         output_names=metric_names,
         with_pbars=False,
@@ -333,6 +345,42 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
         Checkpoint.load_objects(to_load=to_save, checkpoint=checkpoint)
 
     return trainer
+
+
+def create_evaluator(model, metrics, config, tag="val"):
+    with_amp = config["with_amp"]
+    device = idist.device()
+
+    @torch.no_grad()
+    def evaluate_step(engine: Engine, batch):
+        model.eval()
+        x, y = batch[0], batch[1]
+        if x.device != device:
+            x = x.to(device, non_blocking=True)
+            y = y.to(device, non_blocking=True)
+
+        with autocast(enabled=with_amp):
+            output = model(x)
+        return output, y
+
+    evaluator = Engine(evaluate_step)
+
+    for name, metric in metrics.items():
+        metric.attach(evaluator, name)
+
+    if idist.get_rank() == 0 and (not config["with_clearml"]):
+        common.ProgressBar(desc=f"Evaluation ({tag})", persist=False).attach(evaluator)
+
+    return evaluator
+
+
+def get_save_handler(config):
+    if config["with_clearml"]:
+        from ignite.contrib.handlers.clearml_logger import ClearMLSaver
+
+        return ClearMLSaver(dirname=config["output_path"])
+
+    return DiskSaver(config["output_path"], require_empty=False)
 
 
 if __name__ == "__main__":
