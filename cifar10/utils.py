@@ -5,7 +5,7 @@ import torch.optim as optim
 from torchvision import models
 from torchvision import datasets
 import torchvision.transforms as T
-
+import numpy as np
 from vit import VisionTransformer, vit_b16
 
 
@@ -89,7 +89,7 @@ def get_model(name):
 
     if name in models.__dict__:
         fn = models.__dict__[name]
-    elif name in ["vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
+    elif name in ["vit_b16_224x244", "vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
         fn = __dict__[name]
     elif name in ["timm_vit_b4_32x32", ]:
         try:
@@ -133,6 +133,43 @@ def get_optimizer(name, model, learning_rate=None, weight_decay=None):
     return optimizer
 
 
+# helper for cutmix
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
+
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
+
+
+def cutmix_forward(model, x, criterion, y, cutmix_beta):
+    # from https://github.com/clovaai/CutMix-PyTorch/blob/master/train.py
+    # generate mixed sample
+    lam = np.random.beta(cutmix_beta, cutmix_beta)
+    rand_index = torch.randperm(x.size()[0]).to(x.device, non_blocking=True)
+    target_a = y
+    target_b = y[rand_index]
+    bbx1, bby1, bbx2, bby2 = rand_bbox(x.size(), lam)
+    x[:, :, bbx1:bbx2, bby1:bby2] = x[rand_index, :, bbx1:bbx2, bby1:bby2]
+    # adjust lambda to exactly match pixel ratio
+    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (x.size()[-1] * x.size()[-2]))
+    # compute output
+    output = model(x)
+    loss = criterion(output, target_a) * lam + criterion(output, target_b) * (1. - lam)
+    
+    return output, loss 
+
 def vit_tiny_patchX_32x32(patch_size, num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
@@ -155,7 +192,6 @@ def vit_tiny_patch4_32x32(num_classes=10, input_channels=3):
 def vit_tiny_patch2_32x32(num_classes=10, input_channels=3):
     return vit_tiny_patchX_32x32(2, num_classes=num_classes, input_channels=input_channels)
 
-
 def vit_b4_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
@@ -170,6 +206,19 @@ def vit_b4_32x32(num_classes=10, input_channels=3):
         attn_drop_rate=0.0,
     )
 
+def vit_b16_224x244(num_classes=10, input_channels=3):
+    return VisionTransformer(
+        num_classes=num_classes,
+        input_channels=input_channels,
+        input_size=224,
+        patch_size=16,  # ceil of 224 / (224 / 16) = 16
+        hidden_size=768,
+        num_layers=12,
+        num_heads=12,
+        mlp_dim=3072,
+        drop_rate=0.1,
+        attn_drop_rate=0.0,
+    )
 
 def vit_b3_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(

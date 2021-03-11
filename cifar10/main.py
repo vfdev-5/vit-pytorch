@@ -129,7 +129,7 @@ def run(
     rand_aug=None,
     with_erasing=False,
     optimizer="adam",
-    batch_size=512,
+    batch_size=128,
     weight_decay=1e-4,
     num_workers=4,
     num_epochs=200,
@@ -142,6 +142,8 @@ def run(
     nproc_per_node=None,
     with_pbar=False,
     with_amp=False,
+    cutmix_beta=0.0,
+    cutmix_prob=0.5,
     rescaled_size=None,
     with_clearml=False,
     **spawn_kwargs,
@@ -169,7 +171,9 @@ def run(
         resume_from (str, optional): path to checkpoint to use to resume the training from. Default, None.
         with_pbar(bool): if True adds a progress bar on training iterations.
         with_amp(bool): if True uses torch native AMP
-        rescaled_size (int, optional): if provided then input image will be rescaled to that value.
+        rescale_size (int, optional): if provided then input image will be rescaled to that value.
+        cutmix_beta : beta value for the distribution of the cutmix
+        cutmix_prob : cutmix probablity
         with_clearml (bool): if True, experiment ClearML logger is setup. Default, False.
         **spawn_kwargs: Other kwargs to spawn run in child processes: master_addr, master_port, node_rank, nnodes
 
@@ -280,6 +284,8 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     #    - RunningAverage` on `train_step` output
     #    - Two progress bars on epochs and optionally on iterations
 
+    cutmix_beta = config["cutmix_beta"]
+    cutmix_prob = config["cutmix_prob"]
     with_amp = config["with_amp"]
     scaler = GradScaler(enabled=with_amp)
 
@@ -293,9 +299,13 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
 
         model.train()
 
-        with autocast(enabled=with_amp):
-            y_pred = model(x)
-            loss = criterion(y_pred, y)
+        with autocast(enabled=with_amp): 
+            r = torch.rand(1).item()
+            if cutmix_beta > 0 and r < cutmix_prob:
+                output, loss = utils.cutmix_forward(model, x, criterion, y, cutmix_beta)
+            else:
+                output = model(x)
+                loss = criterion(output, y)
 
         optimizer.zero_grad()
         scaler.scale(loss).backward()
