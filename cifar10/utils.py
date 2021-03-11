@@ -1,13 +1,11 @@
 import os
 
+import numpy as np
 import torch
 import torch.optim as optim
-from torchvision import models
-from torchvision import datasets
 import torchvision.transforms as T
-import numpy as np
+from torchvision import datasets, models
 from vit import VisionTransformer, vit_b16
-
 
 mean_vals = (0.485, 0.456, 0.406)
 std_vals = (0.229, 0.224, 0.225)
@@ -37,10 +35,10 @@ def create_train_transform(size, rand_aug, with_erasing=False):
         tfs.append(T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0))
     else:
         pass
-        
+
     tfs += [
         T.ToTensor(),
-        T.Normalize(mean_vals, std_vals),        
+        T.Normalize(mean_vals, std_vals),
     ]
 
     if with_erasing:
@@ -50,12 +48,14 @@ def create_train_transform(size, rand_aug, with_erasing=False):
 
 
 def create_test_transform(size):
-    return T.Compose([
-        T.Resize(int((256 / 224) * size), interpolation=3),
-        T.CenterCrop(size),
-        T.ToTensor(),
-        T.Normalize(mean_vals, std_vals),   
-    ])
+    return T.Compose(
+        [
+            T.Resize(int((256 / 224) * size), interpolation=3),
+            T.CenterCrop(size),
+            T.ToTensor(),
+            T.Normalize(mean_vals, std_vals),
+        ]
+    )
 
 
 def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing=False):
@@ -73,8 +73,12 @@ def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing
         train_transform = create_train_transform(rescale_size, rand_aug, with_erasing)
         test_transform = create_test_transform(rescale_size)
 
-    train_ds = datasets.CIFAR10(root=path, train=True, download=download, transform=train_transform)
-    test_ds = datasets.CIFAR10(root=path, train=False, download=False, transform=test_transform)
+    train_ds = datasets.CIFAR10(
+        root=path, train=True, download=download, transform=train_transform
+    )
+    test_ds = datasets.CIFAR10(
+        root=path, train=False, download=False, transform=test_transform
+    )
 
     return train_ds, test_ds
 
@@ -85,13 +89,22 @@ def get_model(name):
     torch_scripted = False
     if name.startswith("torchscripted_"):
         torch_scripted = True
-        name = name[len("torchscripted_"):]
+        name = name[len("torchscripted_") :]
 
     if name in models.__dict__:
         fn = models.__dict__[name]
-    elif name in ["vit_b16_224x244", "vit_tiny_patch4_32x32", "vit_tiny_patch2_32x32", "vit_b4_32x32", "vit_b3_32x32", "vit_b2_32x32"]:
+    elif name in [
+        "vit_b16_224x244",
+        "vit_tiny_patch4_32x32",
+        "vit_tiny_patch2_32x32",
+        "vit_b4_32x32",
+        "vit_b3_32x32",
+        "vit_b2_32x32",
+    ]:
         fn = __dict__[name]
-    elif name in ["timm_vit_b4_32x32", ]:
+    elif name in [
+        "timm_vit_b4_32x32",
+    ]:
         try:
             import timm
         except ImportError:
@@ -100,7 +113,9 @@ def get_model(name):
                 "\tpip install timm"
             )
         fn = __dict__[name]
-    elif name in ["vit_b16", ]:
+    elif name in [
+        "vit_b16",
+    ]:
         fn = __dict__[name]
     else:
         raise RuntimeError(f"Unknown model name {name}")
@@ -137,7 +152,7 @@ def get_optimizer(name, model, learning_rate=None, weight_decay=None):
 def rand_bbox(size, lam):
     W = size[2]
     H = size[3]
-    cut_rat = np.sqrt(1. - lam)
+    cut_rat = np.sqrt(1.0 - lam)
     cut_w = np.int(W * cut_rat)
     cut_h = np.int(H * cut_rat)
 
@@ -166,9 +181,10 @@ def cutmix_forward(model, x, criterion, y, cutmix_beta):
     lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (x.size()[-1] * x.size()[-2]))
     # compute output
     output = model(x)
-    loss = criterion(output, target_a) * lam + criterion(output, target_b) * (1. - lam)
-    
-    return output, loss 
+    loss = criterion(output, target_a) * lam + criterion(output, target_b) * (1.0 - lam)
+
+    return output, loss
+
 
 def vit_tiny_patchX_32x32(patch_size, num_classes=10, input_channels=3):
     return VisionTransformer(
@@ -180,17 +196,22 @@ def vit_tiny_patchX_32x32(patch_size, num_classes=10, input_channels=3):
         num_layers=4,
         num_heads=6,
         mlp_dim=1024,
-        drop_rate=0.1, 
+        drop_rate=0.1,
         attn_drop_rate=0.0,
     )
 
 
 def vit_tiny_patch4_32x32(num_classes=10, input_channels=3):
-    return vit_tiny_patchX_32x32(4, num_classes=num_classes, input_channels=input_channels)
+    return vit_tiny_patchX_32x32(
+        4, num_classes=num_classes, input_channels=input_channels
+    )
 
 
 def vit_tiny_patch2_32x32(num_classes=10, input_channels=3):
-    return vit_tiny_patchX_32x32(2, num_classes=num_classes, input_channels=input_channels)
+    return vit_tiny_patchX_32x32(
+        2, num_classes=num_classes, input_channels=input_channels
+    )
+
 
 def vit_b4_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
@@ -206,6 +227,7 @@ def vit_b4_32x32(num_classes=10, input_channels=3):
         attn_drop_rate=0.0,
     )
 
+
 def vit_b16_224x244(num_classes=10, input_channels=3):
     return VisionTransformer(
         num_classes=num_classes,
@@ -219,6 +241,7 @@ def vit_b16_224x244(num_classes=10, input_channels=3):
         drop_rate=0.1,
         attn_drop_rate=0.0,
     )
+
 
 def vit_b3_32x32(num_classes=10, input_channels=3):
     return VisionTransformer(
@@ -252,11 +275,21 @@ def vit_b2_32x32(num_classes=10, input_channels=3):
 
 def timm_vit_b4_32x32(num_classes=10, input_channels=3):
     from functools import partial
+
     import torch.nn as nn
-    from timm.models.vision_transformer import VisionTransformer as TimmVisionTransformer
+    from timm.models.vision_transformer import (
+        VisionTransformer as TimmVisionTransformer,
+    )
 
     return TimmVisionTransformer(
-        img_size=32, patch_size=4, in_chans=input_channels,
-        embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        num_classes=num_classes, norm_layer=partial(nn.LayerNorm, eps=1e-6)
+        img_size=32,
+        patch_size=4,
+        in_chans=input_channels,
+        embed_dim=768,
+        depth=12,
+        num_heads=12,
+        mlp_ratio=4,
+        qkv_bias=True,
+        num_classes=num_classes,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6),
     )

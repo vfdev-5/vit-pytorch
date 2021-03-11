@@ -2,20 +2,19 @@ from datetime import datetime
 from pathlib import Path
 
 import fire
+import ignite
+import ignite.distributed as idist
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import utils
-from torch.cuda.amp import GradScaler, autocast
-
-import ignite
-import ignite.distributed as idist
 from ignite.contrib.engines import common
 from ignite.contrib.handlers import PiecewiseLinear
 from ignite.engine import Engine, Events
 from ignite.handlers import Checkpoint, DiskSaver, global_step_from_engine
 from ignite.metrics import Accuracy, Loss
 from ignite.utils import manual_seed, setup_logger
+from torch.cuda.amp import GradScaler, autocast
 
 
 def training(local_rank, config):
@@ -59,12 +58,17 @@ def training(local_rank, config):
     config["num_iters_per_epoch"] = len(train_loader)
     model, optimizer, criterion, lr_scheduler = initialize(config)
 
-    logger.info(f"# model parameters (M): {sum([m.numel() for m in model.parameters()]) * 1e-6}")
+    logger.info(
+        f"# model parameters (M): {sum([m.numel() for m in model.parameters()]) * 1e-6}"
+    )
 
     # Create trainer for current task
-    trainer = create_trainer(model, optimizer, criterion, lr_scheduler, train_loader.sampler, config, logger)
+    trainer = create_trainer(
+        model, optimizer, criterion, lr_scheduler, train_loader.sampler, config, logger
+    )
 
-    # Let's now setup evaluator engine to perform model's validation and compute metrics
+    # Let's now setup evaluator engine to perform model's validation and
+    # compute metrics
     metrics = {
         "Accuracy": Accuracy(),
         "Loss": Loss(criterion),
@@ -86,7 +90,10 @@ def training(local_rank, config):
         state = evaluator.run(test_loader)
         log_metrics(logger, epoch, state.times["COMPLETED"], "Test", state.metrics)
 
-    trainer.add_event_handler(Events.EPOCH_COMPLETED(every=config["validate_every"]) | Events.COMPLETED, run_validation)
+    trainer.add_event_handler(
+        Events.EPOCH_COMPLETED(every=config["validate_every"]) | Events.COMPLETED,
+        run_validation,
+    )
 
     if rank == 0:
         # Setup TensorBoard logging on trainer and evaluators. Logged values are:
@@ -94,7 +101,9 @@ def training(local_rank, config):
         #  - Learning rate
         #  - Evaluation train/test metrics
         evaluators = {"training": train_evaluator, "test": evaluator}
-        tb_logger = common.setup_tb_logging(output_path, trainer, optimizer, evaluators=evaluators)
+        tb_logger = common.setup_tb_logging(
+            output_path, trainer, optimizer, evaluators=evaluators
+        )
 
     # Store 1 best models by validation accuracy starting from num_epochs / 2:
     best_model_handler = Checkpoint(
@@ -107,7 +116,8 @@ def training(local_rank, config):
         score_function=Checkpoint.get_default_score_fn("Accuracy"),
     )
     evaluator.add_event_handler(
-        Events.COMPLETED(lambda *_: trainer.state.epoch > config["num_epochs"] // 2), best_model_handler
+        Events.COMPLETED(lambda *_: trainer.state.epoch > config["num_epochs"] // 2),
+        best_model_handler,
     )
 
     try:
@@ -199,7 +209,8 @@ def get_dataflow(config):
         idist.barrier()
 
     train_dataset, test_dataset = utils.get_train_test_datasets(
-        config["data_path"], **{k: config[k] for k in ["rescale_size", "rand_aug", "with_erasing"]}
+        config["data_path"],
+        **{k: config[k] for k in ["rescale_size", "rand_aug", "with_erasing"]},
     )
 
     if idist.get_rank() == 0:
@@ -208,11 +219,18 @@ def get_dataflow(config):
 
     # Setup data loader also adapted to distributed config: nccl, gloo, xla-tpu
     train_loader = idist.auto_dataloader(
-        train_dataset, batch_size=config["batch_size"], num_workers=config["num_workers"], shuffle=True, drop_last=True,
+        train_dataset,
+        batch_size=config["batch_size"],
+        num_workers=config["num_workers"],
+        shuffle=True,
+        drop_last=True,
     )
 
     test_loader = idist.auto_dataloader(
-        test_dataset, batch_size=2 * config["batch_size"], num_workers=config["num_workers"], shuffle=False,
+        test_dataset,
+        batch_size=2 * config["batch_size"],
+        num_workers=config["num_workers"],
+        shuffle=False,
     )
     return train_loader, test_loader
 
@@ -223,7 +241,10 @@ def initialize(config):
     model = idist.auto_model(model)
 
     optimizer = utils.get_optimizer(
-        config["optimizer"], model, learning_rate=config["learning_rate"], weight_decay=config["weight_decay"]
+        config["optimizer"],
+        model,
+        learning_rate=config["learning_rate"],
+        weight_decay=config["weight_decay"],
     )
     # Adapt optimizer for distributed backend if provided
     optimizer = idist.auto_optim(optimizer)
@@ -235,14 +256,18 @@ def initialize(config):
         (le * config["num_warmup_epochs"], config["learning_rate"]),
         (le * config["num_epochs"], 0.0),
     ]
-    lr_scheduler = PiecewiseLinear(optimizer, param_name="lr", milestones_values=milestones_values)
+    lr_scheduler = PiecewiseLinear(
+        optimizer, param_name="lr", milestones_values=milestones_values
+    )
 
     return model, optimizer, criterion, lr_scheduler
 
 
 def log_metrics(logger, epoch, elapsed, tag, metrics):
     metrics_output = "\n".join([f"\t{k}: {v}" for k, v in metrics.items()])
-    logger.info(f"\nEpoch {epoch} - Evaluation time (seconds): {elapsed:.2f} - {tag} metrics:\n {metrics_output}")
+    logger.info(
+        f"\nEpoch {epoch} - Evaluation time (seconds): {elapsed:.2f} - {tag} metrics:\n {metrics_output}"
+    )
 
 
 def log_basic_info(logger, config):
@@ -254,7 +279,9 @@ def log_basic_info(logger, config):
         # torch.backends.cudnn can not be pickled with hvd spawning procs
         from torch.backends import cudnn
 
-        logger.info(f"- GPU Device: {torch.cuda.get_device_name(idist.get_local_rank())}")
+        logger.info(
+            f"- GPU Device: {torch.cuda.get_device_name(idist.get_local_rank())}"
+        )
         logger.info(f"- CUDA version: {torch.version.cuda}")
         logger.info(f"- CUDNN version: {cudnn.version()}")
 
@@ -271,7 +298,9 @@ def log_basic_info(logger, config):
         logger.info("\n")
 
 
-def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, config, logger):
+def create_trainer(
+    model, optimizer, criterion, lr_scheduler, train_sampler, config, logger
+):
 
     device = idist.device()
 
@@ -299,7 +328,7 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
 
         model.train()
 
-        with autocast(enabled=with_amp): 
+        with autocast(enabled=with_amp):
             r = torch.rand(1).item()
             if cutmix_beta > 0 and r < cutmix_prob:
                 output, loss = utils.cutmix_forward(model, x, criterion, y, cutmix_beta)
@@ -329,7 +358,12 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     if config["with_pbar"] and idist.get_rank() == 0:
         ProgressBar().attach(trainer)
 
-    to_save = {"trainer": trainer, "model": model, "optimizer": optimizer, "lr_scheduler": lr_scheduler}
+    to_save = {
+        "trainer": trainer,
+        "model": model,
+        "optimizer": optimizer,
+        "lr_scheduler": lr_scheduler,
+    }
     metric_names = [
         "batch loss",
     ]
@@ -349,7 +383,9 @@ def create_trainer(model, optimizer, criterion, lr_scheduler, train_sampler, con
     resume_from = config["resume_from"]
     if resume_from is not None:
         checkpoint_fp = Path(resume_from)
-        assert checkpoint_fp.exists(), f"Checkpoint '{checkpoint_fp.as_posix()}' is not found"
+        assert (
+            checkpoint_fp.exists()
+        ), f"Checkpoint '{checkpoint_fp.as_posix()}' is not found"
         logger.info(f"Resume from a checkpoint: {checkpoint_fp.as_posix()}")
         checkpoint = torch.load(checkpoint_fp.as_posix(), map_location="cpu")
         Checkpoint.load_objects(to_load=to_save, checkpoint=checkpoint)
