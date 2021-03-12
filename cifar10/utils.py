@@ -24,7 +24,7 @@ cifar10_train_transform = T.Compose(
 cifar10_test_transform = T.Compose([T.ToTensor(), T.Normalize(mean_vals, std_vals),])
 
 
-def create_train_transform(size, rand_aug, with_erasing=False):
+def create_train_transform(size, rand_aug, rand_erasing=None):
 
     tfs = [
         T.RandomResizedCrop(size, interpolation=3),
@@ -41,8 +41,8 @@ def create_train_transform(size, rand_aug, with_erasing=False):
         T.Normalize(mean_vals, std_vals),
     ]
 
-    if with_erasing:
-        tfs.append(T.RandomErasing(value="random"))
+    if rand_erasing is not None:
+        tfs.append(T.RandomErasing(p=rand_erasing, value="random"))
 
     return T.Compose(tfs)
 
@@ -58,7 +58,7 @@ def create_test_transform(size):
     )
 
 
-def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing=False):
+def get_train_test_datasets(path, rescale_size=None, rand_aug=None, rand_erasing=None):
     if not os.path.exists(path):
         os.makedirs(path)
         download = True
@@ -70,7 +70,7 @@ def get_train_test_datasets(path, rescale_size=None, rand_aug=None, with_erasing
         train_transform = cifar10_train_transform
         test_transform = cifar10_test_transform
     else:
-        train_transform = create_train_transform(rescale_size, rand_aug, with_erasing)
+        train_transform = create_train_transform(rescale_size, rand_aug, rand_erasing)
         test_transform = create_test_transform(rescale_size)
 
     train_ds = datasets.CIFAR10(
