@@ -79,6 +79,16 @@ def training(local_rank, config):
     evaluator = create_evaluator(model, metrics=metrics, config=config)
     train_evaluator = create_evaluator(model, metrics=metrics, config=config)
 
+    if config["smoke_test"]:
+        logger.info("Reduce the size of training and test dataloader as smoke_test=True")
+        
+        def get_batches(loader):
+            loader_iter = iter(loader)
+            return [next(loader_iter) for _ in range(5)]
+
+        train_loader = get_batches(train_loader)
+        test_loader = get_batches(test_loader)
+
     if config["with_pbar"] and rank == 0:
         ProgressBar(desc="Evaluation (train)", persist=False).attach(train_evaluator)
         ProgressBar(desc="Evaluation (val)", persist=False).attach(evaluator)
@@ -137,7 +147,7 @@ def run(
     model="vit_tiny_patch4_32x32",
     rescale_size=None,
     rand_aug=None,
-    with_erasing=False,
+    rand_erasing=None,
     optimizer="adam",
     batch_size=128,
     weight_decay=1e-4,
@@ -156,35 +166,37 @@ def run(
     cutmix_prob=0.5,
     rescaled_size=None,
     with_clearml=False,
+    smoke_test=False,
     **spawn_kwargs,
 ):
     """Main entry to train an model on CIFAR10 dataset.
 
     Args:
-        seed (int): random state seed to set. Default, 543.
+        seed (int): random state seed to set.
         data_path (str): input dataset path. Default, "/tmp/cifar10".
         output_path (str): output path. Default, "/tmp/output-cifar10".
-        model (str): model name (from torchvision) to setup model to train. Default, "resnet18".
-        batch_size (int): total batch size. Default, 512.
+        model (str): model name (from torchvision) to setup model to train.
+        batch_size (int): total batch size.
         optimizer (str): optimizer name. Possible values: "sgd", "adam", "adamw". Default, "adam".
-        weight_decay (float): weight decay. Default, 1e-4.
-        num_workers (int): number of workers in the data loader. Default, 12.
-        num_epochs (int): number of epochs to train the model. Default, 24.
-        learning_rate (float): peak of piecewise linear learning rate scheduler. Default, 0.4.
-        num_warmup_epochs (int): number of warm-up epochs before learning rate decay. Default, 4.
-        validate_every (int): run model's validation every ``validate_every`` epochs. Default, 3.
-        checkpoint_every (int): store training checkpoint every ``checkpoint_every`` iterations. Default, 200.
+        weight_decay (float): weight decay.
+        num_workers (int): number of workers in the data loader.
+        num_epochs (int): number of epochs to train the model.
+        learning_rate (float): peak of piecewise linear learning rate scheduler.
+        num_warmup_epochs (int): number of warm-up epochs before learning rate decay.
+        validate_every (int): run model's validation every ``validate_every`` epochs.
+        checkpoint_every (int): store training checkpoint every ``checkpoint_every`` iterations.
         backend (str, optional): backend to use for distributed configuration. Possible values: None, "nccl",
-            "gloo" etc. Default, None.
+            "gloo" etc.
         nproc_per_node (int, optional): optional argument to setup number of processes per node. It is useful,
             when main python process is spawning training as child processes.
-        resume_from (str, optional): path to checkpoint to use to resume the training from. Default, None.
+        resume_from (str, optional): path to checkpoint to use to resume the training from.
         with_pbar(bool): if True adds a progress bar on training iterations.
         with_amp(bool): if True uses torch native AMP
         rescale_size (int, optional): if provided then input image will be rescaled to that value.
         cutmix_beta : beta value for the distribution of the cutmix
         cutmix_prob : cutmix probablity
-        with_clearml (bool): if True, experiment ClearML logger is setup. Default, False.
+        with_clearml (bool): if True, experiment ClearML logger is setup.
+        smoke_test (bool): run 5 iters and quit
         **spawn_kwargs: Other kwargs to spawn run in child processes: master_addr, master_port, node_rank, nnodes
 
     """
@@ -210,7 +222,7 @@ def get_dataflow(config):
 
     train_dataset, test_dataset = utils.get_train_test_datasets(
         config["data_path"],
-        **{k: config[k] for k in ["rescale_size", "rand_aug", "with_erasing"]},
+        **{k: config[k] for k in ["rescale_size", "rand_aug", "rand_erasing"]},
     )
 
     if idist.get_rank() == 0:

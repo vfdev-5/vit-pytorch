@@ -78,7 +78,7 @@ python -u main.py run --backend="horovod" --nproc_per_node=2
 - [ ] Grab HP from paper
 
 
-### Online logs
+### CIFAR10 32x32 Online logs
 
 On TensorBoard.dev: https://tensorboard.dev/experiment/14IXJkjzT8OEagHAl5os2w
 
