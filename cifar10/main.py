@@ -80,8 +80,10 @@ def training(local_rank, config):
     train_evaluator = create_evaluator(model, metrics=metrics, config=config)
 
     if config["smoke_test"]:
-        logger.info("Reduce the size of training and test dataloader as smoke_test=True")
-        
+        logger.info(
+            "Reduce the size of training and test dataloader as smoke_test=True"
+        )
+
         def get_batches(loader):
             loader_iter = iter(loader)
             return [next(loader_iter) for _ in range(5)]
